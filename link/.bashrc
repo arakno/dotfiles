@@ -1,6 +1,10 @@
 # Where the magic happens.
 export DOTFILES=~/.dotfiles
 
+. ~/.dotfiles/z/z.sh
+. ~/.dotfiles/.oh-my-git/prompt.sh
+. ~/.dotfiles/.env
+
 # Source all files in "source"
 function src() {
   local file
@@ -18,4 +22,5 @@ function dotfiles() {
   $DOTFILES/bin/dotfiles "$@" && src
 }
 
-src
+# dotfiles
+# src
