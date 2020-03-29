@@ -2,7 +2,10 @@
 export DOTFILES=~/.dotfiles
 
 . ~/.dotfiles/z/z.sh
-. ~/.dotfiles/.oh-my-git/prompt.sh
+#. ~/.dotfiles/oh-my-bash/oh-my-bash.sh
+. ~/.dotfiles/.bashrc-ohmybash
+#. ~/.dotfiles/.oh-my-git/prompt.sh
+# Arakno: Might be able to comment line below
 . ~/.dotfiles/source/.env
 
 # Source all files in "source"
