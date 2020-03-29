@@ -3,7 +3,7 @@ export DOTFILES=~/.dotfiles
 
 . ~/.dotfiles/z/z.sh
 . ~/.dotfiles/.oh-my-git/prompt.sh
-. ~/.dotfiles/.env
+. ~/.dotfiles/source/.env
 
 # Source all files in "source"
 function src() {
@@ -22,5 +22,7 @@ function dotfiles() {
   $DOTFILES/bin/dotfiles "$@" && src
 }
 
+# Arakno: I think this just needs to run once in a while:
 # dotfiles
-# src
+
+src
