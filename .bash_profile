@@ -1,1 +1,1 @@
-.dotfiles/link/.bash_profile
+/home/arakno/.bash_profile

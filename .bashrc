@@ -1,1 +1,1 @@
-.dotfiles/link/.bashrc
+/home/arakno/.bashrc
