@@ -1,0 +1,216 @@
+#!/bin/sh
+## imgult, the image-ultimator v4.2.05 by ryanpcmcquen
+
+## Thanks to B. Watson for lots of help  :^)
+
+# Ryan P. C. McQuen | Everett, WA
+
+## Do not output file size changes by default, because du is slow
+## override with `SPACE_SAVING_CALC=on`.
+SPACE_SAVING_CALC=${SPACE_SAVING_CALC:-off}
+
+## Prepend imgult on the command line with:
+##  BACKUPIMAGES=true  (to back everything up)
+##  EXIFREMOVE=n  (to keep EXIF data)
+BACKUPIMAGES=${BACKUPIMAGES:-false}
+EXIFREMOVE=${EXIFREMOVE:-true}
+
+## Create a log of files:
+IMGULT_FILES_LIST=${IMGULT_FILES_LIST:-imgult-files.txt}
+IMGULT_TEMP_FILES_LIST=${IMGULT_TEMP_FILES_LIST:-imgult-temp-files.txt}
+## Log processed files so they can be skipped on subsequent runs:
+IMGULT_PROCESSED_FILES_LIST=${IMGULT_PROCESSED_FILES_LIST:-imgult-processed-files.txt}
+
+## Allow the user to turn off the IMGATCH service
+## (ignoring previously processed files).
+ENGAGE_IMGATCH_SERVICE=${ENGAGE_IMGATCH_SERVICE:-true}
+
+## File extensions are easily added now,
+## thanks to B. Watson.
+JPGEXTENSIONS="jpg jpeg jpe jfif jif jfi thm"
+PNGEXTENSIONS="png apng mng"
+GIFEXTENSIONS="gif"
+SVGEXTENSIONS="svg svgz"
+
+if [ -z "$JPEGTRAN" ]; then
+    if [ `uname` = "Darwin" ]; then
+        for DIR in /usr/local/Cellar/mozjpeg/*/bin
+            do PATH="$DIR:$PATH"
+        done
+    fi
+    for DIR in /opt/*/bin
+        do PATH="$DIR:$PATH"
+    done
+    JPEGTRAN="$(which jpegtran)"
+fi
+
+if [ "${SPACE_SAVING_CALC}" = "on" ]; then
+    ## Find out how big the directory/files are
+    ## so we can relish in the savings later.
+    du -hs "$@" > preImgultSize
+fi
+
+## BSD `find` needs a path to work, GNU `find` does not,
+## so we set it here if positional parameters are
+## equal to 0.
+##
+## We were originally checking if "$@" was empty,
+## but it turns out that is a nightmare if regex
+## paths are fed to imgult.
+if [ $# -eq 0 ]; then
+    set -- .
+fi
+
+## Below we have leaning toothpick syndrome
+## ...
+## Notice how the output is filtered with sed, in case
+## the user feeds a directory using tab completion,
+## leading to a trailing slash, and ergo, double slashes
+## (most systems are fine with double slashes,
+## but we should avoid assumptions if possible).
+## ...
+## Also, we ignore PICO-8 (.p8) files as optimizing
+## them renders them useless.
+find "$@" -type f -a \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.jpe' \
+    -o -iname '*.jfif' -o -iname '*.jif' -o -iname '*.jfi' -o -iname '*.thm' \
+    -o -iname '*.png' -o -iname '*.apng' -o -iname '*.mng' -o -iname '*.gif' \
+    -o -iname '*.svg' -o -iname '*.svgz' \) \
+    -not -iname '*.p8*' \
+        | sed 's@//@/@g' > ${IMGULT_FILES_LIST}
+
+## Ignore any files that were already processed.
+if [ -e ${IMGULT_PROCESSED_FILES_LIST} ] && [ "${ENGAGE_IMGATCH_SERVICE}" = true ]; then
+    echo "** ... IMGATCH SERVICE INITIATED ... **"
+    grep -v -x -f ${IMGULT_PROCESSED_FILES_LIST} ${IMGULT_FILES_LIST} > ${IMGULT_TEMP_FILES_LIST}
+    mv ${IMGULT_TEMP_FILES_LIST} ${IMGULT_FILES_LIST}
+fi
+
+## Back it up!
+if [ "$BACKUPIMAGES" = true ]; then
+    rsync -avz --files-from=${IMGULT_FILES_LIST} $PWD imgult-backup-files/
+fi
+
+if [ "$EXIFREMOVE" = "true" ]; then
+    if [ "$(which exiv2)" ]; then
+        ## Clear out that exif!
+        cat ${IMGULT_FILES_LIST} | \
+        while read IMGULT_FILE; do
+            exec nice -n15 exiv2 -v rm "$IMGULT_FILE" &
+        done
+    else
+        echo
+        echo "You need to install exiv2 for exif support."
+        echo
+    fi
+fi
+
+if [ "$JPEGTRAN" ] && [ "$(which jpegoptim)" ]; then
+    ## Standard options with verbosity:
+    egrep -i "($(echo $JPGEXTENSIONS | tr ' ' '|')\$)" ${IMGULT_FILES_LIST} | \
+    while read IMGULT_FILE; do
+        exec nice -n16 $JPEGTRAN -verbose -outfile "$IMGULT_FILE" "$IMGULT_FILE" \
+            && nice -n16 jpegoptim -v "$IMGULT_FILE" &
+        echo "$IMGULT_FILE" >> "${IMGULT_PROCESSED_FILES_LIST}" &
+    done
+else
+    echo
+    echo "You need to install jpegtran (mozjpeg) and jpegoptim for jpg support."
+    echo
+fi
+
+if [ "$(which pngquant)" ] && [ "$(which optipng)" ]; then
+    ## Standard options with verbosity:
+    egrep -i "($(echo $PNGEXTENSIONS | tr ' ' '|')\$)" ${IMGULT_FILES_LIST} | \
+    while read IMGULT_FILE; do
+        exec nice -n17 pngquant -f -v --skip-if-larger -o "$IMGULT_FILE" -- "$IMGULT_FILE" \
+            && nice -n17 optipng -v "$IMGULT_FILE" &
+        echo "$IMGULT_FILE" >> "${IMGULT_PROCESSED_FILES_LIST}" &
+    done
+else
+    echo
+    echo "You need to install pngquant and optipng for png support."
+    echo
+fi
+
+if [ "$(which gifsicle)" ]; then
+    ## -b keeps the filename, -O3 uses highest optimization level.
+    ## It is an 'O' as in Oxford, not a zero (0).
+    egrep -i "($(echo $GIFEXTENSIONS | tr ' ' '|')\$)" ${IMGULT_FILES_LIST} | \
+    while read IMGULT_FILE; do
+        exec nice -n18 gifsicle -V -b -O3 "$IMGULT_FILE" &
+        echo "$IMGULT_FILE" >> "${IMGULT_PROCESSED_FILES_LIST}" &
+    done
+else
+    echo
+    echo "You need to install gifsicle for gif support."
+    echo
+fi
+
+if [ "$(which svgo)" ]; then
+    egrep -i "($(echo $SVGEXTENSIONS | tr ' ' '|')\$)" ${IMGULT_FILES_LIST} | \
+    while read IMGULT_FILE; do
+        exec nice -n19 svgo "$IMGULT_FILE" &
+        echo "$IMGULT_FILE" >> "${IMGULT_PROCESSED_FILES_LIST}" &
+    done
+else
+    echo
+    echo "You need to install svgo for svg support."
+    echo
+fi
+
+## Let everything complete:
+while [ -e ${IMGULT_FILES_LIST} ]; do
+    if [ "`pgrep egrep`" ] \
+    || [ "`pgrep exiv2`" ] \
+    || [ "`pgrep jpegtran`" ] || [ "`pgrep jpegoptim`" ] \
+    || [ "`pgrep pngquant`" ] || [ "`pgrep optipng`" ] \
+    || [ "`pgrep gifsicle`" ] || [ "`pgrep svgo`" ] \
+    || [ "`lsof -- ${IMGULT_FILES_LIST}`" ]; then
+        wait
+        echo "... TUNING FLUX CAPACITOR ..."
+    else
+        if [ "${SPACE_SAVING_CALC}" = "on" ]; then
+            ## Calculate the new size here, so fast comps don't finish early:
+            du -hs "$@" > postImgultSize
+        fi
+        echo
+        ## Thanks to patorjk.com/software/taag/
+        echo "****************************************************************************** "
+        echo "                 ___           ___           ___           ___       ___      "
+        echo "     ___        /\__\         /\  \         /\__\         /\__\     /\  \     "
+        echo "    /\  \      /::|  |       /::\  \       /:/  /        /:/  /     \:\  \    "
+        echo "    \:\  \    /:|:|  |      /:/\:\  \     /:/  /        /:/  /       \:\  \   "
+        echo "    /::\__\  /:/|:|__|__   /:/  \:\  \   /:/  /  ___   /:/  /        /::\  \  "
+        echo " __/:/\/__/ /:/ |::::\__\ /:/__/_\:\__\ /:/__/  /\__\ /:/__/        /:/\:\__\ "
+        echo "/\/:/  /    \/__/--/:/  / \:\  /\ \/__/ \:\  \ /:/  / \:\  \       /:/  \/__/ "
+        echo "\::/__/           /:/  /   \:\ \:\__\    \:\  /:/  /   \:\  \     /:/  /      "
+        echo " \:\__\          /:/  /     \:\/:/  /     \:\/:/  /     \:\  \    \/__/       "
+        echo "  \/__/         /:/  /       \::/  /       \::/  /       \:\__\               "
+        echo "                \/__/         \/__/         \/__/         \/__/               "
+        echo
+        echo "****************************************************************************** "
+        echo
+        if [ "${SPACE_SAVING_CALC}" = "on" ]; then
+            echo "* ... PRE-IMGULT TIME WARP ... * "
+            echo "* Execute pre-imgulted capacity outputting: * "
+            cat preImgultSize
+            echo
+            echo "* Execute imgulted capacity outputting: * "
+            ## Find the patented imgult savings!
+            cat postImgultSize
+            echo
+            echo "* Execute parametric cleaning sequence: * "
+            rm -v preImgultSize postImgultSize ${IMGULT_FILES_LIST}
+        else
+            echo "* Execute parametric cleaning sequence: * "
+            rm -v ${IMGULT_FILES_LIST}
+        fi
+        if [ "${ENGAGE_IMGATCH_SERVICE}" = false ]; then
+            rm -v ${IMGULT_PROCESSED_FILES_LIST}
+        fi
+        echo
+        echo "* The imgult has completed. Take care. * "
+        echo "****************************************************************************** "
+        echo
+    fi
+done
